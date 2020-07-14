@@ -2,8 +2,6 @@ package vsphere
 
 import (
 	"context"
-	"fmt"
-	"github.com/spf13/viper"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/vim25/soap"
 	"net/url"
