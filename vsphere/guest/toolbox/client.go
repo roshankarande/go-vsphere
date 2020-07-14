@@ -20,9 +20,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/vmware/govmomi/guest"
-	"github.com/vmware/govmomi/vim25/soap"
-	"github.com/vmware/govmomi/vim25/types"
 	"io"
 	"log"
 	"net/url"
@@ -30,6 +27,10 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/vmware/govmomi/guest"
+	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
 )
 
 // Client attempts to expose guest.OperationsManager as idiomatic Go interfaces
@@ -229,7 +230,7 @@ func (c *Client) RunCommands(ctx context.Context, data chan string, commands []s
 		path = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
 		//args = append([]string{"/c", cmd.Path}, args...)
 		//args = append([]string{ cmd.Path }, args...)
-		args = []string{"-Command",fmt.Sprintf(`"& { %s }"`,strings.Join(commands,";")),"| Out-File", output[0].path,"-encoding ASCII"}
+		args = []string{"-Command", fmt.Sprintf(`"& { %s }"`, strings.Join(commands, ";")), "| Out-File", output[0].path, "-encoding ASCII"}
 
 	default:
 		//if !strings.ContainsAny(cmd.Path, "/") {
@@ -257,7 +258,7 @@ func (c *Client) RunCommands(ctx context.Context, data chan string, commands []s
 	}
 
 	rc := 0
-	var l = []int64{0,0}       // l[0] - stdoutput len... l[1] - stderr len
+	var l = []int64{0, 0} // l[0] - stdoutput len... l[1] - stderr len
 
 	for {
 
@@ -269,7 +270,7 @@ func (c *Client) RunCommands(ctx context.Context, data chan string, commands []s
 		p := procs[0]
 
 		if p.EndTime == nil {
-			<-time.After( time.Second * 10 )  // see what fits best....
+			<-time.After(time.Second * 10) // see what fits best....
 
 			for index, out := range output {
 				var buf = new(strings.Builder)
@@ -282,7 +283,7 @@ func (c *Client) RunCommands(ctx context.Context, data chan string, commands []s
 					return err
 				}
 
-				io.Copy(buf,f)
+				io.Copy(buf, f)
 				//fmt.Print(buf.String()[l[index]:n])
 
 				if index == 0 {
@@ -309,7 +310,7 @@ func (c *Client) RunCommands(ctx context.Context, data chan string, commands []s
 			return err
 		}
 
-		io.Copy(buf,f)
+		io.Copy(buf, f)
 		if index == 0 {
 			data <- buf.String()[l[0]:n]
 			//fmt.Print(buf.String()[l[0]:n])
@@ -320,13 +321,12 @@ func (c *Client) RunCommands(ctx context.Context, data chan string, commands []s
 		return &exitError{fmt.Errorf("%s: exit %d", path, rc), rc}
 	}
 
-
 	return nil
 
 }
 
 // Run implements RunCommand over vmx guest RPC against standard vmware-tools or toolbox.
-func (c *Client)RunCommand(ctx context.Context,data chan string, command string) error {
+func (c *Client) RunCommand(ctx context.Context, data chan string, command string) error {
 	output := []struct {
 		io.Writer
 		fd   string
@@ -359,7 +359,7 @@ func (c *Client)RunCommand(ctx context.Context,data chan string, command string)
 	switch c.GuestFamily {
 	case types.VirtualMachineGuestOsFamilyWindowsGuest:
 		path = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
-		args = []string{"-Command",fmt.Sprintf(`"& { %s }"`,command),"| Out-File", output[0].path,"-encoding ASCII"}
+		args = []string{"-Command", fmt.Sprintf(`"& { %s }"`, command), "| Out-File", output[0].path, "-encoding ASCII"}
 	default:
 		fmt.Errorf("not a windows machine")
 	}
@@ -377,7 +377,7 @@ func (c *Client)RunCommand(ctx context.Context,data chan string, command string)
 	}
 
 	rc := 0
-	var l = []int64{0,0}       // l[0] - stdoutput len... l[1] - stderr len
+	var l = []int64{0, 0} // l[0] - stdoutput len... l[1] - stderr len
 
 	for {
 
@@ -389,7 +389,7 @@ func (c *Client)RunCommand(ctx context.Context,data chan string, command string)
 		p := procs[0]
 
 		if p.EndTime == nil {
-			<-time.After( time.Second * 10 )  // see what fits best....
+			<-time.After(time.Second * 10) // see what fits best....
 
 			for index, out := range output {
 				var buf = new(strings.Builder)
@@ -402,7 +402,7 @@ func (c *Client)RunCommand(ctx context.Context,data chan string, command string)
 					return err
 				}
 
-				io.Copy(buf,f)
+				io.Copy(buf, f)
 				//fmt.Print(buf.String()[l[index]:n])
 				if index == 0 {
 					data <- buf.String()[l[index]:n]
@@ -424,12 +424,12 @@ func (c *Client)RunCommand(ctx context.Context,data chan string, command string)
 			continue
 		}
 
-		f, _, err := c.Download(ctx, out.path)
+		f, n, err := c.Download(ctx, out.path)
 		if err != nil {
 			return err
 		}
 
-		io.Copy(buf,f)
+		io.Copy(buf, f)
 		//io.Copy(stdout,f)
 
 		if index == 0 {
@@ -441,7 +441,6 @@ func (c *Client)RunCommand(ctx context.Context,data chan string, command string)
 	if rc != 0 {
 		return &exitError{fmt.Errorf("%s: exit %d", path, rc), rc}
 	}
-
 
 	return nil
 }
@@ -479,7 +478,7 @@ func (c *Client) RunSimpleCommands(ctx context.Context, commands []string) error
 	switch c.GuestFamily {
 	case types.VirtualMachineGuestOsFamilyWindowsGuest:
 		path = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
-		args = []string{"-Command",fmt.Sprintf(`"& { %s }"`,strings.Join(commands,";")),"| Out-File", output[0].path,"-encoding ASCII"}
+		args = []string{"-Command", fmt.Sprintf(`"& { %s }"`, strings.Join(commands, ";")), "| Out-File", output[0].path, "-encoding ASCII"}
 	default:
 		fmt.Errorf("not a windows machine")
 	}
@@ -506,7 +505,7 @@ func (c *Client) RunSimpleCommands(ctx context.Context, commands []string) error
 		p := procs[0]
 
 		if p.EndTime == nil {
-			<-time.After( time.Second * 10 )
+			<-time.After(time.Second * 10)
 			continue
 		}
 
@@ -538,7 +537,7 @@ func (c *Client) RunScript(ctx context.Context, data chan string, script string)
 	}
 	p := soap.DefaultUpload
 
-	err = c.Upload(ctx, fSrcScript, execfile, p, &types.GuestFileAttributes{},true)
+	err = c.Upload(ctx, fSrcScript, execfile, p, &types.GuestFileAttributes{}, true)
 
 	if err != nil {
 		fmt.Println(err)
@@ -556,7 +555,7 @@ func (c *Client) RunScript(ctx context.Context, data chan string, script string)
 	switch c.GuestFamily {
 	case types.VirtualMachineGuestOsFamilyWindowsGuest:
 		path = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
-		args = []string{ execfile, "| Out-File", outFile, "-encoding ASCII"}
+		args = []string{execfile, "| Out-File", outFile, "-encoding ASCII"}
 	default:
 		//if !strings.ContainsAny(cmd.Path, "/") {
 		//	// vmware-tools requires an absolute ProgramPath
@@ -603,7 +602,7 @@ func (c *Client) RunScript(ctx context.Context, data chan string, script string)
 				return err
 			}
 
-			io.Copy(buf,f)
+			io.Copy(buf, f)
 			data <- buf.String()[l:n]
 			l = n
 
@@ -620,7 +619,7 @@ func (c *Client) RunScript(ctx context.Context, data chan string, script string)
 		return err
 	}
 
-	io.Copy(buf,f)
+	io.Copy(buf, f)
 	data <- buf.String()[l:n]
 
 	if rc != 0 {
@@ -631,7 +630,6 @@ func (c *Client) RunScript(ctx context.Context, data chan string, script string)
 
 	return nil
 }
-
 
 // archiveReader wraps an io.ReadCloser to support streaming download
 // of a guest directory, stops reading once it sees the stream trailer.
