@@ -1,19 +1,3 @@
-/*
-Copyright (c) 2017 VMware, Inc. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package toolbox
 
 import (
@@ -744,4 +728,39 @@ func (c *Client) Upload(ctx context.Context, src io.Reader, dst string, p soap.U
 	}
 
 	return vc.Client.Upload(ctx, src, u, &p)
+}
+
+// customized Function
+func (c *Client) UploadScript(ctx context.Context, dst string, f io.Reader) error {
+	return c.UploadFile(ctx,dst,f,false)
+}
+
+// customized Function
+func (c *Client) UploadFile(ctx context.Context, dst string, f io.Reader, isDir bool) error {
+
+	vcFile, err := c.FileManager.CreateTemporaryFile(ctx, c.Authentication, "", "", "")
+
+	if err != nil {
+		return err
+	}
+
+	defer c.FileManager.DeleteFile(ctx, c.Authentication, vcFile)
+
+	p := soap.DefaultUpload
+	err = c.Upload(ctx, f, vcFile, p, &types.GuestFileAttributes{}, true)
+	if err != nil {
+		return err
+	}
+
+	if isDir {
+		cmd := fmt.Sprintf("tar -xzvf %s -C %s", vcFile, dst)
+		c.RunSimpleCommands(ctx, []string{fmt.Sprintf("mkdir %s -Force", dst), cmd})
+	} else {
+		err = c.FileManager.MoveFile(ctx, c.Authentication, vcFile, dst, true)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
