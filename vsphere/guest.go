@@ -5,7 +5,7 @@ import (
 	"github.com/vmware/govmomi/guest"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
-	"go-vsphere/vsphere/guest/toolbox"
+	"github.com/roshankarande/go-vsphere/vsphere/guest/toolbox"
 	"io"
 )
 
