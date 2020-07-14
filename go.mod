@@ -1,4 +1,4 @@
-module go-vsphere
+module github.com/roshankarande/go-vsphere
 
 go 1.14
 
