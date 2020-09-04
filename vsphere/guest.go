@@ -3,10 +3,12 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"github.com/sethvargo/go-retry"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/guest/toolbox"
 	"log"
+	"time"
 
 	//"github.com/roshankarande/go-vsphere/vsphere/guest/toolbox"
 	"github.com/vmware/govmomi/guest"
@@ -73,6 +75,7 @@ import (
 //	return nil
 //}
 
+
 func TestCredentials(ctx context.Context, baseGuestAuth types.BaseGuestAuthentication, opsmgr *guest.OperationsManager) error {
 
 	authmgr, err := opsmgr.AuthManager(ctx)
@@ -90,12 +93,12 @@ func TestCredentials(ctx context.Context, baseGuestAuth types.BaseGuestAuthentic
 	return nil
 }
 
-func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, command string, o chan CmdOutput) error {
+func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, command string, o chan CmdOutput, options  ...map[string]interface{}) error {
 
 	vm, err := find.NewFinder(c.Client).VirtualMachine(ctx, vmName)
 
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("[vm] %s does not exist in [vc]", vmName)
 	}
 
 	opsmgr := guest.NewOperationsManager(c.Client, vm.Reference())
@@ -139,6 +142,35 @@ func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 		},
 		AuthMgr: authmgr,
 	}
+
+	b, err := retry.NewConstant(20*time.Second)
+	if err != nil {
+		return err
+	}
+
+	err = retry.Do(ctx, retry.WithMaxDuration( 400*time.Second, b), func(ctx context.Context) error {
+		running, err := vm.IsToolsRunning(ctx)
+
+		if err != nil {
+			return err
+		}
+
+		if !running{
+			//fmt.Println("tools not running")
+			return retry.RetryableError(fmt.Errorf("tools not running"))
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("error with querying vmware tools status")
+	}
+
+	if err := tboxClient.TestCredentials(ctx); err != nil {
+		return fmt.Errorf("authentication details not correct %s",err)
+	}
+
 	err = tboxClient.RunCmd(ctx,command,o)
 
 	if err != nil {
@@ -148,7 +180,7 @@ func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 	return nil
 }
 
-func InvokeRunCmdBasic(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, command string ) (*CmdOutput, error) {
+func InvokeRunCmdBasic(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, command string, options ...map[string]interface{}) (*CmdOutput, error) {
 
 	vm, err := find.NewFinder(c.Client).VirtualMachine(ctx, vmName)
 
@@ -167,9 +199,6 @@ func InvokeRunCmdBasic(ctx context.Context, c *govmomi.Client, vmName, guestUser
 	}
 
 	baseGuestAuth := types.BaseGuestAuthentication(&auth)
-	if err := TestCredentials(ctx, baseGuestAuth, opsmgr); err != nil {
-		return nil, fmt.Errorf("authentication details not correct")
-	}
 
 	pmgr, err := opsmgr.ProcessManager(ctx)
 
@@ -197,6 +226,35 @@ func InvokeRunCmdBasic(ctx context.Context, c *govmomi.Client, vmName, guestUser
 		},
 		AuthMgr: authmgr,
 	}
+
+	b, err := retry.NewConstant(20*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	err = retry.Do(ctx, retry.WithMaxDuration( 400*time.Second, b), func(ctx context.Context) error {
+		running, err := vm.IsToolsRunning(ctx)
+
+		if err != nil {
+			return err
+		}
+
+		if !running{
+			//fmt.Println("tools not running")
+			return retry.RetryableError(fmt.Errorf("tools not running"))
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error with querying vmware tools status")
+	}
+
+	if err := tboxClient.TestCredentials(ctx); err != nil {
+		return nil, fmt.Errorf("authentication details not correct %s",err)
+	}
+
 	cmdOutput, err := tboxClient.RunCmdBasic(ctx,command)
 
 	if err != nil {
