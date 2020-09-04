@@ -3,15 +3,14 @@ package vsphere
 import (
 	"context"
 	"fmt"
-	"github.com/sethvargo/go-retry"
 	"github.com/vmware/govmomi/guest"
 	"github.com/vmware/govmomi/guest/toolbox"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 	"io"
 	"log"
-	"os"
 	"strings"
 	"time"
 )
@@ -19,6 +18,7 @@ import (
 type ToolBoxClient struct {
 	toolbox.Client
 	AuthMgr *guest.AuthManager
+	vm      *object.VirtualMachine
 }
 
 type CmdOutput struct {
@@ -34,32 +34,22 @@ type exitError struct {
 func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOutput) error {
 	defer close(o)
 
-	output := []struct {
-		io.Writer
-		fd   string
-		path string
-	}{
-		{os.Stdout, "1", ""},
-		{os.Stderr, "2", ""},
+	stdOutPath, err := c.mktemp(ctx)
+
+	if err != nil {
+		return err
+	}
+	defer c.rm(ctx, stdOutPath)
+
+	stderrPath, err := c.mktemp(ctx)
+
+	if err != nil {
+		return err
 	}
 
-	var args []string
+	defer c.rm(ctx, stderrPath)
 
-	for i, out := range output {
-		if out.Writer == nil {
-			continue
-		}
-
-		dst, err := c.mktemp(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer c.rm(ctx, dst)
-
-		args = append(args, out.fd+">", dst)
-		output[i].path = dst
-	}
+	args := []string{"1>", stdOutPath, "2>", stderrPath}
 
 	var path string
 
@@ -89,87 +79,43 @@ func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOut
 	rc := 0
 	var l = []int64{0, 0} // l[0] - stdoutput len... l[1] - Stderr len
 
-	temp := new(CmdOutput)
+	cmdOutput := new(CmdOutput)
 
 	for {
 
-		b, err := retry.NewConstant(30 * time.Second)
+		procs, err := c.ProcessManager.ListProcesses(ctx, c.Authentication, []int64{pid})
+
 		if err != nil {
-			return err
-		}
-
-		var potentialRestart = false
-
-		var procs []types.GuestProcessInfo
-
-		err = retry.Do(ctx, retry.WithMaxRetries(4, b), func(ctx context.Context) error {
-			if procs, err = c.ProcessManager.ListProcesses(ctx, c.Authentication, []int64{pid}); err != nil {
-				if strings.Contains(err.Error(), "agent could not be contacted") {
-					//fmt.Println("agent could not be contacted")
-					potentialRestart = true
-					return retry.RetryableError(err)
-
-				}
-				return err
+			if strings.Contains(err.Error(), "agent could not be contacted") {
+				fmt.Println(err.Error())
+				return nil
 			}
-			return nil
-		})
-
-		if err != nil {
 			return err
 		}
-
-		if potentialRestart {
-			//fmt.Println("Potential restart")
-			return nil
-		}
-
-		//procs, err := c.ProcessManager.ListProcesses(ctx, c.Authentication, []int64{pid})
-		//
-		//if err != nil {
-		//	if strings.Contains(err.Error(),"agent could not be contacted"){
-		//		fmt.Println(err.Error())
-		//		return nil
-		//	}
-		//	return err
-		//}
 
 		p := procs[0]
 
 		if p.EndTime == nil {
 			<-time.After(time.Second * 10) // see what fits best.... time.Sleep?
 
-			for index, out := range output {
-				var buf = new(strings.Builder)
-				if out.Writer == nil {
-					continue
-				}
+			var buf = new(strings.Builder)
 
-				f, n, err := c.Download(ctx, out.path)
-				if err != nil {
-					return err
-				}
+			buf, n, err := c.downloadHelperWindows(ctx, stdOutPath)
+			if err != nil {
+				return err
+			}
+			cmdOutput.Stdout = buf.String()[l[0]:n]
+			l[0] = n
 
-				z, err := adjustEncodingtoWindows(f)
-
-				if err != nil {
-					return err
-				}
-
-				n, _ = io.Copy(buf, z)
-
-				switch index {
-				case 0:
-					temp.Stdout = buf.String()[l[index]:n]
-				case 1:
-					temp.Stderr = buf.String()[l[index]:n]
-				default:
-					return fmt.Errorf("index not 0 nor 1")
-				}
-				l[index] = n
+			buf, n, err = c.downloadHelperWindows(ctx, stderrPath)
+			if err != nil {
+				return err
 			}
 
-			o <- *temp
+			cmdOutput.Stderr = buf.String()[l[1]:n]
+			l[1] = n
+
+			o <- *cmdOutput
 			continue
 		}
 
@@ -178,38 +124,22 @@ func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOut
 	}
 
 	var buf = new(strings.Builder)
-	for index, out := range output {
-		if out.Writer == nil {
-			continue
-		}
 
-		f, n, err := c.Download(ctx, out.path)
-		if err != nil {
-			return err
-		}
-
-		z, err := adjustEncodingtoWindows(f)
-
-		if err != nil {
-			return err
-		}
-
-		n, _ = io.Copy(buf, z)
-
-		//fmt.Println(adjustEncodingtoWindows(f))
-
-		switch index {
-		case 0:
-			temp.Stdout = buf.String()[l[index]:n]
-		case 1:
-			temp.Stderr = buf.String()[l[index]:n]
-		default:
-			return fmt.Errorf("index not 0 nor 1")
-		}
+	buf, n, err := c.downloadHelperWindows(ctx, stdOutPath)
+	if err != nil {
+		return err
 	}
 
-	o <- *temp
-	//fmt.Println(len(temp.Stdout), len(temp.Stderr))
+	cmdOutput.Stdout = buf.String()[l[0]:n]
+
+	buf, n, err = c.downloadHelperWindows(ctx, stderrPath)
+	if err != nil {
+		return err
+	}
+
+	cmdOutput.Stderr = buf.String()[l[1]:n]
+
+	o <- *cmdOutput
 
 	if rc != 0 {
 		return &exitError{fmt.Errorf("%s: exit %d", path, rc), rc}
@@ -266,67 +196,14 @@ func (c ToolBoxClient) RunCmdBasic(ctx context.Context, command string) (*CmdOut
 
 	cmdOutput := new(CmdOutput)
 
-	//b, err := retry.NewConstant(15 * time.Second)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//var potentialRestart = false
-	//
-	//err = retry.Do(ctx, retry.WithMaxRetries(12, b), func(ctx context.Context) error {
-	//	if err = c.TestCredentials(ctx); err != nil {
-	//		if strings.Contains(err.Error(), "agent could not be contacted") {
-	//			fmt.Println("agent could not be contacted")
-	//			potentialRestart = true
-	//			return retry.RetryableError(err)
-	//
-	//		}
-	//		return err
-	//	}
-	//	return nil
-	//})
-	//
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//if potentialRestart {
-	//	//fmt.Println("Potential restart")
-	//	return &CmdOutput{
-	//		Stdout: "Potential Restart",
-	//		Stderr: "",
-	//	}, nil
-	//}
-
 	for {
-		b, err := retry.NewConstant(30 * time.Second)
+
+		procs, err := c.ProcessManager.ListProcesses(ctx, c.Authentication, []int64{pid})
 		if err != nil {
-			return nil, err
-		}
-
-		var potentialRestart = false
-
-		var procs []types.GuestProcessInfo
-
-		err = retry.Do(ctx, retry.WithMaxRetries(4, b), func(ctx context.Context) error {
-			if procs, err = c.ProcessManager.ListProcesses(ctx, c.Authentication, []int64{pid}); err != nil {
-				if strings.Contains(err.Error(), "agent could not be contacted") {
-					//fmt.Println("agent could not be contacted")
-					potentialRestart = true
-					return retry.RetryableError(err)
-
-				}
-				return err
+			if strings.Contains(err.Error(), "agent could not be contacted") {
+				return nil, nil
 			}
-			return nil
-		})
-
-		if err != nil {
 			return nil, err
-		}
-
-		if potentialRestart {
-			//fmt.Println("Potential restart")
-			return nil, nil
 		}
 
 		p := procs[0]
@@ -343,16 +220,11 @@ func (c ToolBoxClient) RunCmdBasic(ctx context.Context, command string) (*CmdOut
 	var buf = new(strings.Builder)
 
 	buf, _, err = c.downloadHelperWindows(ctx, stdOutPath)
-
 	if err != nil {
 		return nil, err
 	}
 
 	cmdOutput.Stdout = buf.String()
-
-	if err != nil {
-		return nil, err
-	}
 
 	buf, _, err = c.downloadHelperWindows(ctx, stderrPath)
 	if err != nil {
@@ -371,16 +243,12 @@ func (c ToolBoxClient) RunCmdBasic(ctx context.Context, command string) (*CmdOut
 func (c *ToolBoxClient) rm(ctx context.Context, path string) {
 	err := c.FileManager.DeleteFile(ctx, c.Authentication, path)
 	if err != nil {
-		log.Printf("rm %q: %s", path, err)
+		log.Printf("rm %q: %s", path, err)    // just comment this out
 	}
 }
 
 func (c *ToolBoxClient) TestCredentials(ctx context.Context) error {
-	if err := c.AuthMgr.ValidateCredentials(ctx, c.Authentication); err != nil {
-		return err
-	}
-
-	return nil
+	return c.AuthMgr.ValidateCredentials(ctx, c.Authentication)
 }
 
 func (c *ToolBoxClient) mktemp(ctx context.Context) (string, error) {
@@ -399,17 +267,8 @@ func adjustEncodingtoWindows(r io.Reader) (io.Reader, error) {
 	return unicodeReader, nil
 }
 
-//func (c *ToolBoxClient) downloadHelperWindows(ctx context.Context, path string) (io.Reader,error) {
-//		f, _, err := c.Download(ctx, path)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		return adjustEncodingtoWindows(f)
-//}
-
+// customized Function
 func (c *ToolBoxClient) downloadHelperWindows(ctx context.Context, path string) (*strings.Builder, int64, error) {
-
 	temp := new(strings.Builder)
 
 	f, _, err := c.Download(ctx, path)
@@ -418,17 +277,14 @@ func (c *ToolBoxClient) downloadHelperWindows(ctx context.Context, path string) 
 	}
 
 	z, err := adjustEncodingtoWindows(f)
-
 	if err != nil {
 		return nil, 0, err
 	}
 
 	n, err := io.Copy(temp, z)
-
 	if err != nil {
 		return nil, 0, err
 	}
 
 	return temp, n, nil
-
 }

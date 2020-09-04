@@ -112,9 +112,6 @@ func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 	}
 
 	baseGuestAuth := types.BaseGuestAuthentication(&auth)
-	if err := TestCredentials(ctx, baseGuestAuth, opsmgr); err != nil {
-		return fmt.Errorf("authentication details not correct")
-	}
 
 	pmgr, err := opsmgr.ProcessManager(ctx)
 
@@ -141,6 +138,7 @@ func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 			GuestFamily:    types.VirtualMachineGuestOsFamilyWindowsGuest,
 		},
 		AuthMgr: authmgr,
+		vm : vm,
 	}
 
 	b, err := retry.NewConstant(20*time.Second)
@@ -148,7 +146,7 @@ func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 		return err
 	}
 
-	err = retry.Do(ctx, retry.WithMaxDuration( 400*time.Second, b), func(ctx context.Context) error {
+	err = retry.Do(ctx, retry.WithMaxDuration( 400 * time.Second, b), func(ctx context.Context) error {
 		running, err := vm.IsToolsRunning(ctx)
 
 		if err != nil {
@@ -156,12 +154,20 @@ func InvokeRunCmd(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 		}
 
 		if !running{
-			//fmt.Println("tools not running")
+			fmt.Println("tools not running")
 			return retry.RetryableError(fmt.Errorf("tools not running"))
+		}
+
+		if running{
+			fmt.Println("tools are running")
 		}
 
 		return nil
 	})
+
+	if err := TestCredentials(ctx, baseGuestAuth, opsmgr); err != nil {
+		return fmt.Errorf("authentication details not correct")
+	}
 
 	if err != nil {
 		return fmt.Errorf("error with querying vmware tools status")
@@ -240,7 +246,7 @@ func InvokeRunCmdBasic(ctx context.Context, c *govmomi.Client, vmName, guestUser
 		}
 
 		if !running{
-			//fmt.Println("tools not running")
+			fmt.Println("tools not running")
 			return retry.RetryableError(fmt.Errorf("tools not running"))
 		}
 
