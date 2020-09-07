@@ -15,8 +15,12 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
+const (
+	DefaultDelay  = time.Duration(20)
+	DefaultTimeout = time.Duration(400)
+)
 
-func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, commands []string,  options  ...map[string]interface{}) error{
+func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, commands []string,  options  map[string]interface{}) error{
 
 	vm, err := find.NewFinder(c.Client).VirtualMachine(ctx, vmName)
 
@@ -32,7 +36,20 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 		return err
 	}
 
-	b, err := retry.NewConstant(20*time.Second)
+	delay, ok := options["delay"].(time.Duration)
+
+	if !ok {
+		delay = DefaultDelay
+	}
+
+	timeout, ok := options["timeout"].(time.Duration)
+
+	if !ok {
+		timeout = DefaultTimeout
+	}
+
+
+	b, err := retry.NewConstant(delay*time.Second)
 	if err != nil {
 		return err
 	}
@@ -40,7 +57,7 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 	for _, command := range commands {
 		fmt.Printf("[cmd]%s\n", command)
 
-		err = retry.Do(ctx, retry.WithMaxDuration( 400 * time.Second, b), func(ctx context.Context) error {
+		err = retry.Do(ctx, retry.WithMaxDuration( timeout * time.Second, b), func(ctx context.Context) error {
 			running, err := vm.IsToolsRunning(ctx)
 
 			if err != nil {
@@ -100,7 +117,7 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 	return nil
 }
 
-func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, commands []string, options ...map[string]interface{}) error {
+func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, commands []string, options map[string]interface{}) error {
 
 	vm, err := find.NewFinder(c.Client).VirtualMachine(ctx, vmName)
 
@@ -117,7 +134,20 @@ func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUse
 		return err
 	}
 
-	b, err := retry.NewConstant(20*time.Second)
+	delay, ok := options["delay"].(time.Duration)
+
+	if !ok {
+		delay = DefaultDelay
+	}
+
+	timeout, ok := options["timeout"].(time.Duration)
+
+	if !ok {
+		timeout = DefaultTimeout
+	}
+
+
+	b, err := retry.NewConstant(delay*time.Second)
 	if err != nil {
 		return err
 	}
@@ -125,7 +155,7 @@ func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUse
 	for _, command := range commands {
 		fmt.Printf("[cmd]%s\n", command)
 
-		err = retry.Do(ctx, retry.WithMaxDuration( 400*time.Second, b), func(ctx context.Context) error {
+		err = retry.Do(ctx, retry.WithMaxDuration( timeout *time.Second, b), func(ctx context.Context) error {
 			running, err := vm.IsToolsRunning(ctx)
 
 			if err != nil {
@@ -166,7 +196,7 @@ func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUse
 	return nil
 }
 
-func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, script string,  options  ...map[string]interface{}) error{
+func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, guestPassword string, script string,  options  map[string]interface{}) error{
 
 	vm, err := find.NewFinder(c.Client).VirtualMachine(ctx, vmName)
 
@@ -182,14 +212,27 @@ func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 		return err
 	}
 
-	b, err := retry.NewConstant(20*time.Second)
+	delay, ok := options["delay"].(time.Duration)
+
+	if !ok {
+		delay = DefaultDelay
+	}
+
+	timeout, ok := options["timeout"].(time.Duration)
+
+	if !ok {
+		timeout = DefaultTimeout
+	}
+
+
+	b, err := retry.NewConstant(delay*time.Second)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("[executing script]")
 
-	err = retry.Do(ctx, retry.WithMaxDuration( 400 * time.Second, b), func(ctx context.Context) error {
+	err = retry.Do(ctx, retry.WithMaxDuration( timeout * time.Second, b), func(ctx context.Context) error {
 			running, err := vm.IsToolsRunning(ctx)
 
 			if err != nil {
@@ -248,7 +291,7 @@ func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 	return nil
 }
 
-func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassword string,  f io.Reader,suffix, dst string, isDir bool) error {
+func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassword string, f io.Reader,suffix, dst string, isDir bool, options map[string]interface{}) error {
 
 	vm, err := find.NewFinder(c.Client).VirtualMachine(ctx, vmName)
 
@@ -264,14 +307,26 @@ func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassw
 		return err
 	}
 
-	b, err := retry.NewConstant(20*time.Second)
+	delay, ok := options["delay"].(time.Duration)
+
+	if !ok {
+		delay = DefaultDelay
+	}
+
+	timeout, ok := options["timeout"].(time.Duration)
+
+	if !ok {
+		timeout = DefaultTimeout
+	}
+
+	b, err := retry.NewConstant(delay*time.Second)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("[uploading]")
 
-	err = retry.Do(ctx, retry.WithMaxDuration( 400 * time.Second, b), func(ctx context.Context) error {
+	err = retry.Do(ctx, retry.WithMaxDuration( timeout * time.Second, b), func(ctx context.Context) error {
 		running, err := vm.IsToolsRunning(ctx)
 
 		if err != nil {
