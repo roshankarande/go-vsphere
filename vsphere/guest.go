@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform/terraform"
 	//"github.com/roshankarande/go-vsphere/vsphere/guest/toolbox"
 	"github.com/vmware/govmomi/guest"
 	"github.com/vmware/govmomi/vim25/types"
@@ -48,10 +49,21 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 		timeout = DefaultTimeout
 	}
 
-
 	b, err := retry.NewConstant(delay*time.Second)
 	if err != nil {
 		return err
+	}
+
+	_, oSpecPresent := options["output"]
+
+	var o terraform.UIOutput
+
+	if oSpecPresent{
+		o, ok = options["output"].(terraform.UIOutput)
+
+		if !ok{
+			return fmt.Errorf("not able to assert terraform.UIOutput")
+		}
 	}
 
 	for _, command := range commands {
@@ -95,18 +107,29 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 				if !ok {
 					break loop
 				}
+				
+				if oSpecPresent {
+					if strings.TrimSpace(output.Stdout) != "" {
+						o.Output(output.Stdout)
+					}
 
-				if strings.TrimSpace(output.Stdout) != "" {
-					fmt.Println(output.Stdout)
+					if strings.TrimSpace(output.Stderr) != "" {
+						o.Output(output.Stderr)
+					}
+
 				}
 
-				if strings.TrimSpace(output.Stderr) != "" {
-					fmt.Println(output.Stderr)
-				}
+				fmt.Println(output.Stdout)
+				fmt.Println(output.Stderr)
+
 
 			case err, ok := <-e:
 				if !ok {
 					break loop
+				}
+
+				if oSpecPresent{
+					o.Output(err.Error())
 				}
 				fmt.Println(err)
 			}
@@ -324,7 +347,7 @@ func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassw
 		return err
 	}
 
-	fmt.Printf("[uploading]")
+	fmt.Println("[uploading]")
 
 	err = retry.Do(ctx, retry.WithMaxDuration( timeout * time.Second, b), func(ctx context.Context) error {
 		running, err := vm.IsToolsRunning(ctx)
