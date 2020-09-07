@@ -248,7 +248,7 @@ func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 	return nil
 }
 
-func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassword string,  f io.Reader, suffix, dst string, isDir bool) error {
+func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassword string,  f io.Reader,suffix, dst string, isDir bool) error {
 
 	vm, err := find.NewFinder(c.Client).VirtualMachine(ctx, vmName)
 
@@ -269,7 +269,7 @@ func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassw
 		return err
 	}
 
-	fmt.Printf("[executing script]")
+	fmt.Printf("[uploading]")
 
 	err = retry.Do(ctx, retry.WithMaxDuration( 400 * time.Second, b), func(ctx context.Context) error {
 		running, err := vm.IsToolsRunning(ctx)
@@ -298,7 +298,7 @@ func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassw
 		return fmt.Errorf("authentication details not correct %s",err)
 	}
 
-	return tboxClient.UploadFile(ctx,dst, f, isDir)
+	return tboxClient.UploadFile(ctx,dst, f,suffix, isDir)
 }
 
 func TestCredentials(ctx context.Context, baseGuestAuth types.BaseGuestAuthentication, opsmgr *guest.OperationsManager) error {

@@ -379,9 +379,9 @@ func (c *ToolBoxClient) TestCredentials(ctx context.Context) error {
 }
 
 // customized Function
-func (c *ToolBoxClient) UploadFile(ctx context.Context, dst string, f io.Reader, isDir bool) error {
+func (c *ToolBoxClient) UploadFile(ctx context.Context, dst string, f io.Reader,suffix string, isDir bool) error {
 
-	filepath, err := c.FileManager.CreateTemporaryFile(ctx, c.Authentication, "", "", "")
+	filepath, err := c.FileManager.CreateTemporaryFile(ctx, c.Authentication, "", suffix, "")
 	if err != nil {
 		return err
 	}
@@ -395,10 +395,12 @@ func (c *ToolBoxClient) UploadFile(ctx context.Context, dst string, f io.Reader,
 	}
 
 	if isDir {
-		cmd := fmt.Sprintf("tar -xzvf %s -C %s", filepath, dst)
+
 		if _, err := c.RunCmdSync(ctx, fmt.Sprintf(`mkdir "%s" -Force`, dst)); err != nil {
 			return err
 		}
+
+		cmd := fmt.Sprintf("tar -xzvf %s -C %s", filepath, dst)
 
 		if _, err := c.RunCmdSync(ctx, cmd); err != nil {
 			return err
