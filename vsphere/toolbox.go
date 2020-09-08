@@ -3,6 +3,7 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform/terraform"
 	"github.com/vmware/govmomi/guest"
 	"github.com/vmware/govmomi/guest/toolbox"
 	"github.com/vmware/govmomi/vim25/soap"
@@ -30,27 +31,44 @@ type exitError struct {
 	exitCode int
 }
 
-func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOutput, e chan error) {
-	defer close(o)
+func (c ToolBoxClient) RunCmd(ctx context.Context, command string, options map[string]interface{}) error {
 
 	cmdOutput := new(CmdOutput)
+
+	_, outputSpecPresent := options["output"]
+
+	if !outputSpecPresent{
+		return fmt.Errorf("options parameter should have an outputSpec")
+	}
+
+	var o terraform.UIOutput
+
+	o, ok := options["output"].(terraform.UIOutput)
+
+	if !ok{
+		return fmt.Errorf(`not able to cast options["output"] terraform.UIOutput`)
+	}
 
 	stdOutPath, err := c.mktemp(ctx)
 
 	if err != nil {
-		e <- err
+		return err
 	}
 	defer c.rm(ctx, stdOutPath)
 
 	stderrPath, err := c.mktemp(ctx)
 
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	defer c.rm(ctx, stderrPath)
 
-	args := []string{"1>", stdOutPath, "2>", stderrPath}
+	var args []string
+	if strings.Contains(command,"1>") || strings.Contains(command,"2>") || strings.Contains(command,">") {
+		args = []string{}
+	}
+	args = []string{"1>", stdOutPath, "2>", stderrPath}
 
 	var path string
 
@@ -74,7 +92,7 @@ func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOut
 
 	pid, err := c.ProcessManager.StartProgram(ctx, c.Authentication, &spec)
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	rc := 0
@@ -87,9 +105,9 @@ func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOut
 		if err != nil {
 			if strings.Contains(err.Error(), "agent could not be contacted") {
 				fmt.Println(err.Error())
-				return
+				return nil
 			}
-			e <- err
+			return err
 		}
 
 		p := procs[0]
@@ -101,20 +119,22 @@ func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOut
 
 			buf, n, err := c.downloadHelperWindows(ctx, stdOutPath)
 			if err != nil {
-				e <- err
+				return err
 			}
 			cmdOutput.Stdout = buf.String()[l[0]:n]
 			l[0] = n
 
+			o.Output(cmdOutput.Stdout)
+
 			buf, n, err = c.downloadHelperWindows(ctx, stderrPath)
 			if err != nil {
-				e <- err
+				return err
 			}
 
 			cmdOutput.Stderr = buf.String()[l[1]:n]
 			l[1] = n
 
-			o <- *cmdOutput
+			o.Output(cmdOutput.Stderr)
 			continue
 		}
 
@@ -126,41 +146,55 @@ func (c ToolBoxClient) RunCmd(ctx context.Context, command string, o chan CmdOut
 
 	buf, n, err := c.downloadHelperWindows(ctx, stdOutPath)
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	cmdOutput.Stdout = buf.String()[l[0]:n]
+	o.Output(cmdOutput.Stdout)
 
 	buf, n, err = c.downloadHelperWindows(ctx, stderrPath)
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	cmdOutput.Stderr = buf.String()[l[1]:n]
-
-	o <- *cmdOutput
+	o.Output(cmdOutput.Stderr)
 
 	if rc != 0 {
-		e <- &exitError{fmt.Errorf("%s: exit %d", path, rc), rc}
+		return &exitError{fmt.Errorf("%s: exit %d", path, rc), rc}
 	}
 
+	return nil
 }
 
-func (c ToolBoxClient) RunScript(ctx context.Context, script string, o chan CmdOutput, e chan error) {
-	defer close(o)
+func (c ToolBoxClient) RunScript(ctx context.Context, script string, options map[string]interface{}) error{
 
 	cmdOutput := new(CmdOutput)
 
+	_, outputSpecPresent := options["output"]
+
+	if !outputSpecPresent{
+		return fmt.Errorf("options parameter should have an outputSpec")
+	}
+
+	var o terraform.UIOutput
+
+	o, ok := options["output"].(terraform.UIOutput)
+
+	if !ok{
+		return fmt.Errorf(`not able to cast options["output"] terraform.UIOutput`)
+	}
+
 	ExecFile, err := c.FileManager.CreateTemporaryFile(ctx, c.Authentication, "govmomi-", ".ps1", "")
 	if err != nil {
-		e <- err
+		return err
 	}
 	defer c.rm(ctx, ExecFile)
 
 	readerExecFile := strings.NewReader(script)
 
 	if err != nil {
-		e <- err
+		return err
 	}
 	p := soap.DefaultUpload
 
@@ -168,20 +202,20 @@ func (c ToolBoxClient) RunScript(ctx context.Context, script string, o chan CmdO
 
 	if err != nil {
 		fmt.Println(err)
-		e <- err
+		return err
 	}
 
 	stdOutPath, err := c.mktemp(ctx)
 
 	if err != nil {
-		e <- err
+		return err
 	}
 	defer c.rm(ctx, stdOutPath)
 
 	stderrPath, err := c.mktemp(ctx)
 
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	defer c.rm(ctx, stderrPath)
@@ -210,7 +244,7 @@ func (c ToolBoxClient) RunScript(ctx context.Context, script string, o chan CmdO
 
 	pid, err := c.ProcessManager.StartProgram(ctx, c.Authentication, &spec)
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	rc := 0
@@ -223,9 +257,9 @@ func (c ToolBoxClient) RunScript(ctx context.Context, script string, o chan CmdO
 		if err != nil {
 			if strings.Contains(err.Error(), "agent could not be contacted") {
 				fmt.Println(err.Error())
-				return
+				return nil
 			}
-			e <- err
+			return err
 		}
 
 		p := procs[0]
@@ -237,20 +271,22 @@ func (c ToolBoxClient) RunScript(ctx context.Context, script string, o chan CmdO
 
 			buf, n, err := c.downloadHelperWindows(ctx, stdOutPath)
 			if err != nil {
-				e <- err
+				return err
 			}
 			cmdOutput.Stdout = buf.String()[l[0]:n]
 			l[0] = n
+			
+			o.Output(cmdOutput.Stdout)
 
 			buf, n, err = c.downloadHelperWindows(ctx, stderrPath)
 			if err != nil {
-				e <- err
+				return err
 			}
 
 			cmdOutput.Stderr = buf.String()[l[1]:n]
 			l[1] = n
 
-			o <- *cmdOutput
+			o.Output(cmdOutput.Stderr)
 			continue
 		}
 
@@ -262,24 +298,24 @@ func (c ToolBoxClient) RunScript(ctx context.Context, script string, o chan CmdO
 
 	buf, n, err := c.downloadHelperWindows(ctx, stdOutPath)
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	cmdOutput.Stdout = buf.String()[l[0]:n]
+	o.Output(cmdOutput.Stdout)
 
 	buf, n, err = c.downloadHelperWindows(ctx, stderrPath)
 	if err != nil {
-		e <- err
+		return err
 	}
 
 	cmdOutput.Stderr = buf.String()[l[1]:n]
-
-	o <- *cmdOutput
+	o.Output(cmdOutput.Stderr)
 
 	if rc != 0 {
-		e <- &exitError{fmt.Errorf("%s: exit %d", path, rc), rc}
+		return &exitError{fmt.Errorf("%s: exit %d", path, rc), rc}
 	}
-
+	return nil
 }
 
 func (c ToolBoxClient) RunCmdSync(ctx context.Context, command string) (*CmdOutput, error) {

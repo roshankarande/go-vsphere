@@ -54,18 +54,6 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 		return err
 	}
 
-	_, oSpecPresent := options["output"]
-
-	var o terraform.UIOutput
-
-	if oSpecPresent{
-		o, ok = options["output"].(terraform.UIOutput)
-
-		if !ok{
-			return fmt.Errorf("not able to assert terraform.UIOutput")
-		}
-	}
-
 	for _, command := range commands {
 		//fmt.Printf("[cmd]%s\n", command)
 
@@ -96,45 +84,9 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 			return fmt.Errorf("authentication details not correct %s",err)
 		}
 
-		cmdOutput := make(chan CmdOutput) // you should create new channel for every command... else it would be a problem....
-		e := make(chan error)
-		go tboxClient.RunCmd(ctx,command,cmdOutput, e)
-
-	loop:
-		for {
-			select {
-			case output, ok := <-cmdOutput:
-				if !ok {
-					break loop
-				}
-				
-				if oSpecPresent {
-					if strings.TrimSpace(output.Stdout) != "" {
-						o.Output(output.Stdout)
-					}
-
-					if strings.TrimSpace(output.Stderr) != "" {
-						o.Output(output.Stderr)
-					}
-
-				}
-
-				//fmt.Println(output.Stdout)
-				//fmt.Println(output.Stderr)
-
-
-			case err, ok := <-e:
-				if !ok {
-					break loop
-				}
-
-				if oSpecPresent{
-					o.Output(err.Error())
-				}
-				//fmt.Println(err)
-			}
+		if err := tboxClient.RunCmd(ctx, command, options); err != nil {
+			return err
 		}
-
 	}
 
 	return nil
@@ -265,19 +217,6 @@ func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 		timeout = DefaultTimeout
 	}
 
-	_, oSpecPresent := options["output"]
-
-	var o terraform.UIOutput
-
-	if oSpecPresent{
-		o, ok = options["output"].(terraform.UIOutput)
-
-		if !ok{
-			return fmt.Errorf("not able to assert terraform.UIOutput")
-		}
-	}
-
-
 	b, err := retry.NewConstant(delay*time.Second)
 	if err != nil {
 		return err
@@ -312,46 +251,8 @@ func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 		return fmt.Errorf("authentication details not correct %s",err)
 	}
 
-	cmdOutput := make(chan CmdOutput) // you should create new channel for every command... else it would be a problem....
-	e := make(chan error)
-		
-	go tboxClient.RunScript(ctx,script,cmdOutput, e)
+	return tboxClient.RunScript(ctx,script,options)
 
-	loop:
-		for {
-			select {
-			case output, ok := <-cmdOutput:
-				if !ok {
-					break loop
-				}
-
-				if oSpecPresent {
-					if strings.TrimSpace(output.Stdout) != "" {
-						o.Output(output.Stdout)
-					}
-
-					if strings.TrimSpace(output.Stderr) != "" {
-						o.Output(output.Stderr)
-					}
-
-				}
-
-				//fmt.Println(output.Stdout)
-				//fmt.Println(output.Stderr)
-
-			case err, ok := <-e:
-				if !ok {
-					break loop
-				}
-
-				if oSpecPresent{
-					o.Output(err.Error())
-				}
-				//fmt.Println(err)
-			}
-		}
-
-	return nil
 }
 
 func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassword string, f io.Reader,suffix, dst string, isDir bool, options map[string]interface{}) error {
