@@ -67,7 +67,7 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 	}
 
 	for _, command := range commands {
-		fmt.Printf("[cmd]%s\n", command)
+		//fmt.Printf("[cmd]%s\n", command)
 
 		err = retry.Do(ctx, retry.WithMaxDuration( timeout * time.Second, b), func(ctx context.Context) error {
 			running, err := vm.IsToolsRunning(ctx)
@@ -119,8 +119,8 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 
 				}
 
-				fmt.Println(output.Stdout)
-				fmt.Println(output.Stderr)
+				//fmt.Println(output.Stdout)
+				//fmt.Println(output.Stderr)
 
 
 			case err, ok := <-e:
@@ -131,7 +131,7 @@ func InvokeCommands(ctx context.Context, c *govmomi.Client, vmName, guestUser, g
 				if oSpecPresent{
 					o.Output(err.Error())
 				}
-				fmt.Println(err)
+				//fmt.Println(err)
 			}
 		}
 
@@ -169,6 +169,17 @@ func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUse
 		timeout = DefaultTimeout
 	}
 
+	_, oSpecPresent := options["output"]
+
+	var o terraform.UIOutput
+
+	if oSpecPresent{
+		o, ok = options["output"].(terraform.UIOutput)
+
+		if !ok{
+			return fmt.Errorf("not able to assert terraform.UIOutput")
+		}
+	}
 
 	b, err := retry.NewConstant(delay*time.Second)
 	if err != nil {
@@ -186,7 +197,7 @@ func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUse
 			}
 
 			if !running{
-				fmt.Println("tools not running")
+				//fmt.Println("tools not running")
 				return retry.RetryableError(fmt.Errorf("tools not running"))
 			}
 
@@ -207,13 +218,20 @@ func InvokeCommandsSync(ctx context.Context, c *govmomi.Client, vmName, guestUse
 			return err
 		}
 
-		if strings.TrimSpace(cmdOutput.Stdout) != "" {
-			fmt.Println(cmdOutput.Stdout)
+		if oSpecPresent {
+			if strings.TrimSpace(cmdOutput.Stdout) != "" {
+				o.Output(cmdOutput.Stdout)
+			}
+
+			if strings.TrimSpace(cmdOutput.Stderr) != "" {
+				o.Output(cmdOutput.Stderr)
+			}
+
 		}
 
-		if strings.TrimSpace(cmdOutput.Stderr) != "" {
-			fmt.Println(cmdOutput.Stderr)
-		}
+		//fmt.Println(cmdOutput.Stdout)
+		//fmt.Println(cmdOutput.Stderr)
+
 	}
 
 	return nil
@@ -245,6 +263,18 @@ func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 
 	if !ok {
 		timeout = DefaultTimeout
+	}
+
+	_, oSpecPresent := options["output"]
+
+	var o terraform.UIOutput
+
+	if oSpecPresent{
+		o, ok = options["output"].(terraform.UIOutput)
+
+		if !ok{
+			return fmt.Errorf("not able to assert terraform.UIOutput")
+		}
 	}
 
 
@@ -295,19 +325,29 @@ func InvokeScript(ctx context.Context, c *govmomi.Client, vmName, guestUser, gue
 					break loop
 				}
 
-				if strings.TrimSpace(output.Stdout) != "" {
-					fmt.Println(output.Stdout)
+				if oSpecPresent {
+					if strings.TrimSpace(output.Stdout) != "" {
+						o.Output(output.Stdout)
+					}
+
+					if strings.TrimSpace(output.Stderr) != "" {
+						o.Output(output.Stderr)
+					}
+
 				}
 
-				if strings.TrimSpace(output.Stderr) != "" {
-					fmt.Println(output.Stderr)
-				}
+				//fmt.Println(output.Stdout)
+				//fmt.Println(output.Stderr)
 
 			case err, ok := <-e:
 				if !ok {
 					break loop
 				}
-				fmt.Println(err)
+
+				if oSpecPresent{
+					o.Output(err.Error())
+				}
+				//fmt.Println(err)
 			}
 		}
 
@@ -347,7 +387,7 @@ func Upload(ctx context.Context,c *govmomi.Client, vmName, guestUser, guestPassw
 		return err
 	}
 
-	fmt.Println("[uploading]")
+	//fmt.Println("[uploading]")
 
 	err = retry.Do(ctx, retry.WithMaxDuration( timeout * time.Second, b), func(ctx context.Context) error {
 		running, err := vm.IsToolsRunning(ctx)
